@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Japanese Learning App - 日本語学習</title>
+    <!-- Load React -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Load TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load PapaParse for CSV handling -->
+    <script src="https://unpkg.com/papaparse@5.3.0/papaparse.min.js"></script>
+    <!-- Load Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700&family=Kosugi+Maru&family=Noto+Sans+JP:wght@400;500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        @keyframes bounce {
+            0% { transform: translateY(-20px) rotate(0deg); }
+            100% { transform: translateY(100vh) rotate(360deg); }
+        }
+        .animate-bounce-custom {
+            animation: bounce linear infinite;
+        }
+        
+        /* Hide scrollbar */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+        
+        html {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Main React Application
+        const JapaneseLearningApp = () => {
+            const { useState, useEffect, useRef } = React;
+            
+            // Device Detection
+            const [isMobile, setIsMobile] = useState(false);
+            
+            useEffect(() => {
+                const checkMobile = () => {
+                    const mobileCheck = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+                    setIsMobile(mobileCheck);
+                };
+                
+                checkMobile();
+                window.addEventListener('resize', checkMobile);
+                return () => window.removeEventListener('resize', checkMobile);
+            }, []);
+            
+            // Initial Vocabulary
+            const initialVocabulary = [
+                { 
+                    japanese: '久しぶり', 
+                    furigana: 'ひさしぶり', 
+                    romaji: 'hisashiburi', 
+                    english: 'long time no see',
+                    thai: 'ไม่เจอกันนานเลยนะ',
+                    englishOptions: ['long time no see', 'hello', 'goodbye', 'how are you'],
+                    thaiOptions: ['ไม่เจอกันนานเลยนะ', 'สวัสดี', 'ลาก่อน', 'สบายดีไหม'],
+                    furiganaMapping: [['久', 'ひさ'], ['しぶり', 'しぶり']]
+                },
+                { 
+                    japanese: '今日', 
+                    furigana: 'きょう', 
+                    romaji: 'kyō', 
+                    english: 'today',
+                    thai: 'วันนี้',
+                    englishOptions: ['yesterday', 'today', 'tomorrow', 'week'],
+                    thaiOptions: ['เมื่อวาน', 'วันนี้', 'พรุ่งนี้', 'สัปดาห์'],
+                    furiganaMapping: [['今日', 'きょう']]
+                },
+                { 
+                    japanese: '学習', 
+                    furigana: 'がくしゅう', 
+                    romaji: 'gakushū', 
+                    english: 'learning',
+                    thai: 'การเรียนรู้',
+                    englishOptions: ['teaching', 'studying', 'learning', 'reading'],
+                    thaiOptions: ['การสอน', 'การศึกษา', 'การเรียนรู้', 'การอ่าน'],
+                    furiganaMapping: [['学', 'がく'], ['習', 'しゅう']]
+                },
+                { 
+                    japanese: '日本語', 
+                    furigana: 'にほんご', 
+                    romaji: 'nihongo', 
+                    english: 'Japanese language',
+                    thai: 'ภาษาญี่ปุ่น',
+                    englishOptions: ['English language', 'Chinese language', 'Japanese language', 'Korean language'],
+                    thaiOptions: ['ภาษาอังกฤษ', 'ภาษาจีน', 'ภาษาญี่ปุ่น', 'ภาษาเกาหลี'],
+                    furiganaMapping: [['日', 'に'], ['本', 'ほん'], ['語', 'ご']]
+                },
+            ];
+            
+            // State Variables
+            const [vocabulary, setVocabulary] = useState([]);
+            const [vocabOrder, setVocabOrder] = useState([]);
+            const [currentIndex, setCurrentIndex] = useState(0);
+            const [selectedAnswer, setSelectedAnswer] = useState('');
+            const [showResult, setShowResult] = useState(false);
+            const [correct, setCorrect] = useState(0);
+            const [attempted, setAttempted] = useState(0);
+            const [wordsMastered, setWordsMastered] = useState(new Set());
+            const [showFurigana, setShowFurigana] = useState(false);
+            const [showRomaji, setShowRomaji] = useState(false);
+            const [answerMode, setAnswerMode] = useState('JapaneseToEnglish');
+            const [targetLanguage, setTargetLanguage] = useState('English');
+            const [autoProgress, setAutoProgress] = useState(false);
+            const [practiceUnmastered, setPracticeUnmastered] = useState(false);
+            const [showSakura, setShowSakura] = useState(true);
+            const [showSettings, setShowSettings] = useState(!isMobile);
+            
+            // Refs
+            const timeoutRef = useRef(null);
+            
+            // Initialize vocabulary and random order
+            useEffect(() => {
+                const shuffled = [...Array(initialVocabulary.length).keys()].sort(() => Math.random() - 0.5);
+                setVocabulary(initialVocabulary);
+                setVocabOrder(shuffled);
+            }, []);
+            
+            // Current word
+            const currentWord = vocabulary.length > 0 && vocabOrder.length > 0 ? 
+                vocabulary[vocabOrder[currentIndex]] : null;
+            
+            // Auto-progress handling
+            useEffect(() => {
+                if (showResult && autoProgress) {
+                    timeoutRef.current = setTimeout(() => {
+                        nextWord();
+                    }, 1500);
+                }
+                
+                return () => {
+                    if (timeoutRef.current) {
+                        clearTimeout(timeoutRef.current);
+                    }
+                };
+            }, [showResult, autoProgress]);
+            
+            // CSV File Upload
+            const handleFileUpload = (event) => {
+                const file = event.target.files[0];
+                if (file && file.type === 'text/csv') {
+                    Papa.parse(file, {
+                        complete: (results) => {
+                            const parsedVocabulary = results.data
+                                .filter(row => row.length >= 5)
+                                .map(row => ({
+                                    japanese: row[0],
+                                    furigana: row[1],
+                                    romaji: row[2],
+                                    english: row[3],
+                                    thai: row[4],
+                                    englishOptions: generateOptions(row[3], results.data.map(r => r[3]).filter(e => e && e !== row[3])),
+                                    thaiOptions: generateOptions(row[4], results.data.map(r => r[4]).filter(t => t && t !== row[4]))
+                                }));
+                            
+                            if (parsedVocabulary.length > 0) {
+                                setVocabulary(parsedVocabulary);
+                                
+                                // Create new random order
+                                const shuffled = [...Array(parsedVocabulary.length).keys()].sort(() => Math.random() - 0.5);
+                                setVocabOrder(shuffled);
+                                
+                                setCurrentIndex(0);
+                                setCorrect(0);
+                                setAttempted(0);
+                                setWordsMastered(new Set());
+                            }
+                        },
+                        header: false,
+                        skipEmptyLines: true
+                    });
+                }
+            };
+            
+            // Generate multiple choice options
+            const generateOptions = (correctAnswer, allAnswers) => {
+                if (!correctAnswer) return [];
+                
+                const options = [correctAnswer];
+                const availableOptions = allAnswers.filter(answer => answer !== correctAnswer);
+                
+                while (options.length < 4 && availableOptions.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * availableOptions.length);
+                    const option = availableOptions[randomIndex];
+                    if (!options.includes(option)) {
+                        options.push(option);
+                    }
+                    availableOptions.splice(randomIndex, 1);
+                }
+                
+                const defaultEnglishOptions = ['computer', 'treat', 'how far', 'hello'];
+                const defaultThaiOptions = ['คอมพิวเตอร์', 'ขนม', 'ไกลแค่ไหน', 'สวัสดี'];
+                const defaultOptions = correctAnswer.match(/[\u0E00-\u0E7F]/) ? defaultThaiOptions : defaultEnglishOptions;
+                
+                while (options.length < 4) {
+                    const defaultOption = defaultOptions.find(opt => !options.includes(opt));
+                    if (defaultOption) {
+                        options.push(defaultOption);
+                    } else {
+                        break;
+                    }
+                }
+                
+                return options.sort(() => Math.random() - 0.5);
+            };
+            
+            // Toggle translation mode
+            const updateAnswerMode = () => {
+                if (answerMode === 'JapaneseToEnglish') {
+                    setAnswerMode('EnglishToJapanese');
+                    setTargetLanguage('English');
+                } else if (answerMode === 'EnglishToJapanese') {
+                    setAnswerMode('JapaneseToThai');
+                    setTargetLanguage('Thai');
+                } else if (answerMode === 'JapaneseToThai') {
+                    setAnswerMode('ThaiToJapanese');
+                    setTargetLanguage('Thai');
+                } else {
+                    setAnswerMode('JapaneseToEnglish');
+                    setTargetLanguage('English');
+                }
+            };
+            
+            // Handle answer selection
+            const handleAnswerSelect = (answer) => {
+                if (showResult || !currentWord) return;
+                
+                setSelectedAnswer(answer);
+                setShowResult(true);
+                setAttempted(attempted + 1);
+                
+                let isCorrect = false;
+                switch (answerMode) {
+                    case 'JapaneseToEnglish':
+                        isCorrect = answer === currentWord.english;
+                        break;
+                    case 'EnglishToJapanese':
+                        isCorrect = answer === currentWord.japanese;
+                        break;
+                    case 'JapaneseToThai':
+                        isCorrect = answer === currentWord.thai;
+                        break;
+                    case 'ThaiToJapanese':
+                        isCorrect = answer === currentWord.japanese;
+                        break;
+                    default:
+                        break;
+                }
+                
+                if (isCorrect) {
+                    setCorrect(correct + 1);
+                    setWordsMastered(prev => new Set([...prev, vocabOrder[currentIndex]]));
+                }
+            };
+            
+            // Go to next word
+            const nextWord = () => {
+                setShowResult(false);
+                setSelectedAnswer('');
+                
+                if (practiceUnmastered) {
+                    const unmastered = [];
+                    vocabOrder.forEach((originalIndex, orderIndex) => {
+                        if (!wordsMastered.has(originalIndex)) {
+                            unmastered.push(orderIndex);
+                        }
+                    });
+                    
+                    if (unmastered.length > 0) {
+                        const currentUnmasteredIndex = unmastered.indexOf(currentIndex);
+                        const nextUnmasteredIndex = (currentUnmasteredIndex + 1) % unmastered.length;
+                        setCurrentIndex(unmastered[nextUnmasteredIndex]);
+                    } else {
+                        setCurrentIndex((prev) => (prev + 1) % vocabOrder.length);
+                    }
+                } else {
+                    setCurrentIndex((prev) => (prev + 1) % vocabOrder.length);
+                }
+            };
+            
+            // Go to previous word
+            const previousWord = () => {
+                setShowResult(false);
+                setSelectedAnswer('');
+                
+                if (practiceUnmastered) {
+                    const unmastered = [];
+                    vocabOrder.forEach((originalIndex, orderIndex) => {
+                        if (!wordsMastered.has(originalIndex)) {
+                            unmastered.push(orderIndex);
+                        }
+                    });
+                    
+                    if (unmastered.length > 0) {
+                        const currentUnmasteredIndex = unmastered.indexOf(currentIndex);
+                        const prevUnmasteredIndex = (currentUnmasteredIndex - 1 + unmastered.length) % unmastered.length;
+                        setCurrentIndex(unmastered[prevUnmasteredIndex]);
+                    } else {
+                        setCurrentIndex((prev) => (prev - 1 + vocabOrder.length) % vocabOrder.length);
+                    }
+                } else {
+                    setCurrentIndex((prev) => (prev - 1 + vocabOrder.length) % vocabOrder.length);
+                }
+            };
+            
+            // Go to random word
+            const goToRandomWord = () => {
+                setShowResult(false);
+                setSelectedAnswer('');
+                const randomIndex = Math.floor(Math.random() * vocabOrder.length);
+                setCurrentIndex(randomIndex);
+            };
+            
+            // Get multiple choice options
+            const getOptions = () => {
+                if (!currentWord) return [];
+                
+                switch (answerMode) {
+                    case 'JapaneseToEnglish':
+                        return currentWord.englishOptions || [];
+                    case 'JapaneseToThai':
+                        return currentWord.thaiOptions || [];
+                    case 'EnglishToJapanese':
+                    case 'ThaiToJapanese':
+                        const currentJapanese = currentWord.japanese;
+                        const otherWords = vocabulary.filter((w, idx) => vocabOrder[currentIndex] !== idx);
+                        const japaneseOptions = [currentJapanese];
+                        
+                        while (japaneseOptions.length < 4 && otherWords.length > 0) {
+                            const randomIndex = Math.floor(Math.random() * otherWords.length);
+                            const option = otherWords[randomIndex].japanese;
+                            if (!japaneseOptions.includes(option)) {
+                                japaneseOptions.push(option);
+                                otherWords.splice(randomIndex, 1);
+                            }
+                        }
+                        
+                        return japaneseOptions.sort(() => Math.random() - 0.5);
+                    default:
+                        return [];
+                }
+            };
+            
+            // Reset progress
+            const resetProgress = () => {
+                setCorrect(0);
+                setAttempted(0);
+                setWordsMastered(new Set());
+            };
+            
+            // Change target language
+            const changeTargetLanguage = () => {
+                const newTargetLanguage = targetLanguage === 'English' ? 'Thai' : 'English';
+                setTargetLanguage(newTargetLanguage);
+                
+                if (newTargetLanguage === 'English') {
+                    setAnswerMode('JapaneseToEnglish');
+                } else {
+                    setAnswerMode('JapaneseToThai');
+                }
+                
+                setShowResult(false);
+                setSelectedAnswer('');
+            };
+            
+            // Render Japanese with furigana
+            const renderJapaneseWithFurigana = () => {
+                if (!currentWord) return '';
+                
+                if (!showFurigana) {
+                    return currentWord.japanese;
+                }
+                
+                if (currentWord.japanese === currentWord.furigana) {
+                    return currentWord.japanese;
+                }
+                
+                if (currentWord.furiganaMapping) {
+                    return (
+                        <>
+                            {currentWord.furiganaMapping.map(([kanji, reading], index) => (
+                                <ruby key={index}>
+                                    {kanji}
+                                    {kanji !== reading && 
+                                        <rt className="text-lg" style={{ fontFamily: "'M PLUS Rounded 1c', 'Kosugi Maru', 'Noto Sans JP', sans-serif" }}>
+                                            {reading}
+                                        </rt>
+                                    }
+                                </ruby>
+                            ))}
+                        </>
+                    );
+                }
+                
+                return (
+                    <ruby>
+                        {currentWord.japanese}
+                        <rt className="text-lg" style={{ fontFamily: "'M PLUS Rounded 1c', 'Kosugi Maru', 'Noto Sans JP', sans-serif" }}>
+                            {currentWord.furigana}
+                        </rt>
+                    </ruby>
+                );
+            };
+            
+            // Get correct answer
+            const getCorrectAnswer = () => {
+                if (!currentWord) return '';
+                
+                switch (answerMode) {
+                    case 'JapaneseToEnglish':
+                        return currentWord.english;
+                    case 'JapaneseToThai':
+                        return currentWord.thai;
+                    case 'EnglishToJapanese':
+                    case 'ThaiToJapanese':
+                        return currentWord.japanese;
+                    default:
+                        return '';
+                }
+            };
+            
+            // Get CSV sample
+            const downloadSampleCSV = () => {
+                const csvContent = "日本語,ふりがな,romaji,English,ไทย\n久しぶり,ひさしぶり,hisashiburi,long time no see,ไม่เจอกันนานเลยนะ\n今日,きょう,kyō,today,วันนี้\n学習,がくしゅう,gakushū,learning,การเรียนรู้\n日本語,にほんご,nihongo,Japanese language,ภาษาญี่ปุ่น";
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'sample_japanese_vocab.csv';
+                link.click();
+                URL.revokeObjectURL(url);
+            };
+            
+            // Calculate stats
+            const progress = vocabOrder.length > 0 ? Math.round((currentIndex + 1) / vocabOrder.length * 100) : 0;
+            const mastery = vocabulary.length > 0 ? Math.round((wordsMastered.size / vocabulary.length) * 100) : 0;
+            const sessionScore = attempted > 0 ? Math.round((correct / attempted) * 100) : 0;
+            
+            // Mobile version
+            if (isMobile) {
+                return (
+                    <div className="min-h-screen relative overflow-hidden" style={{ fontFamily: "'Inter', 'Noto Sans', sans-serif", backgroundColor: '#FFF5F5' }}>
+                        {/* Reduced sakura for performance */}
+                        {showSakura && (
+                            <div className="fixed inset-0 pointer-events-none">
+                                {[...Array(5)].map((_, i) => (
+                                    <div
+                                        key={i}
+                                        className="absolute animate-bounce-custom"
+                                        style={{
+                                            left: `${Math.random() * 100}%`,
+                                            top: `-20px`,
+                                            animationDelay: `${Math.random() * 10}s`,
+                                            animationDuration: `${10 + Math.random() * 10}s`,
+                                        }}
+                                    >
+                                        <div className="text-pink-300 opacity-40 text-2xl">🌸</div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Simple wave pattern background */}
+                        <div className="fixed inset-0 opacity-5">
+                            <div className="absolute inset-0" style={{
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0,50 Q25,0 50,50 T100,50' stroke='%23DC143C' fill='none' stroke-width='1'/%3E%3C/svg%3E")`,
+                                backgroundSize: '100px 100px'
+                            }}></div>
+                        </div>
+                        
+                        <div className="relative p-3">
+                            {/* Simplified header */}
+                            <div className="text-center mb-4">
+                                <h1 className="text-3xl font-bold mb-1 bg-gradient-to-r from-red-600 to-pink-600 bg-clip-text text-transparent" 
+                                    style={{ fontFamily: "'M PLUS Rounded 1c', 'Noto Sans JP', sans-serif" }}>
+                                    日本語学習
+                                </h1>
+                                <div className="bg-red-600 h-1 w-16 mx-auto mb-2 rounded-full"></div>
+                            </div>
+
+                            {/* Main content area */}
+                            <div className="bg-white rounded-2xl shadow-lg overflow-hidden border-3 border-red-100 mb-4">
+                                {/* Top controls - simplified */}
+                                <div className="p-3 border-b-2 border-red-100 bg-gradient-to-r from-pink-50 to-red-50">
+                                    <div className="flex justify-between">
+                                        <button
+                                            onClick={() => setShowFurigana(!showFurigana)}
+                                            className={`px-3 py-2 rounded-full text-sm ${
+                                                showFurigana 
+                                                    ? 'bg-gradient-to-r from-red-500 to-pink-500 text-white shadow-md' 
+                                                    : 'bg-white text-red-600 border border-red-300'
+                                            }`}
+                                            style={{ fontFamily: "'M PLUS Rounded 1c', 'Noto Sans JP', sans-serif" }}
+                                        >
+                                            ふりがな {showFurigana && '✓'}
+                                        </button>
+                                        
+                                        <button
+                                            onClick={() => setShowRomaji(!showRomaji)}
+                                            className={`px-3 py-2 rounded-full text-sm ${
+                                                showRomaji 
+                                                    ? 'bg-gradient-to-r from-red-500 to-pink-500 text-white shadow-md' 
+                                                    : 'bg-white text-red-600 border border-red-300'
+                                            }`}
+                                        >
+                                            Romaji {showRomaji && '✓'}
+                                        </button>
+                                        
+                                        <button
+                                            onClick={() => setShowSettings(!showSettings)}
+                                            className="px-3 py-2 rounded-full text-sm bg-white text-blue-600 border border-blue-300"
+                                        >
+                                            ⚙️ 設定
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Main vocabulary display */}
+                                <div className="p-6 bg-gradient-to-b from-white to-pink-50">
+                                    <div className="text-center mb-4">
+                                        {!currentWord ? (
+                                            <div className="text-xl text-gray-500 animate-pulse">読み込み中...</div>
+                                        ) : answerMode === 'JapaneseToEnglish' || answerMode === 'JapaneseToThai' ? (
+                                            <>
+                                                <div className="text-5xl font-bold mb-2" 
+                                                     style={{ fontFamily: "'M PLUS Rounded 1c', 'Noto Sans JP', sans-serif", color: '#DC143C' }}>
+                                                    {renderJapaneseWithFurigana()}
+                                                </div>
+                                                {showRomaji && (
+                                                    <div className="text-lg text-gray-600 italic" style={{ fontFamily: "'Inter', sans-serif" }}>
+                                                        {currentWord.romaji}
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : answerMode === 'EnglishToJapanese' ? (
+                                            <div className="text-4xl font-bold" style={{ color: '#DC143C' }}>
+                                                {currentWord.english}
+                                            </div>
+                                        ) : (
+                                            <div className="text-4xl font-bold" style={{ fontFamily: "'Noto Sans Thai', sans-serif", color: '#DC143C' }}>
+                                                {currentWord.thai}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Answer options - stacked for mobile */}
+                                    <div className="grid grid-cols-1 gap-3">
+                                        {getOptions().map((option, index) => (
+                                            <button
+                                                key={index}
+                                                onClick={() => handleAnswerSelect(option)}
+                                                className={`p-4 rounded-xl text-lg font-medium shadow-md ${
+                                                    showResult && option === getCorrectAnswer()
+                                                        ? 'bg-gradient-to-r from-green-400 to-green-500 text-white border-2 border-green-600'
+                                                        : showResult && option === selectedAnswer && selectedAnswer !== getCorrectAnswer()
+                                                        ? 'bg-gradient-to-r from-red-400 to-red-500 text-white border-2 border-red-600'
+                                                        : 'bg-white hover:bg-pink-50 border-2 border-pink-200'
+                                                }`}
+                                                disabled={showResult}
+                                                style={{ 
+                                                    fontFamily: option && option.match(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/) 
+                                                        ? "'M PLUS Rounded 1c', 'Noto Sans JP', sans-serif" 
+                                                        : option && option.match(/[\u0E00-\u0E7F]/)
+                                                        ? "'Noto Sans Thai', sans-serif"
+                                                        : "'Inter', sans-serif"
+                                                }}
+                                            >
+                                                {option}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Navigation with icons */}
+                                <div className="p-4 bg-gradient-to-r from-pink-100 to-red-100">
+                                    <div className="flex justify-between">
+                                        <button
+                                            onClick={previousWord}
+                                            className="px-4 py-3 bg-white rounded-xl shadow-md"
+                                        >
+                                            <div className="flex items-center">
+                                                <span className="text-xl">⬅️</span>
+                                                <span className="font-bold text-sm text-red-600 ml-1" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif" }}>前へ</span>
+                                            </div>
+                                        </button>
+                                        
+                                        <button
+                                            onClick={goToRandomWord}
+                                            className="px-4 py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl shadow-md"
+                                        >
+                                            <div className="flex items-center">
+                                                <span className="text-xl">🎲</span>
+                                                <span className="font-bold text-sm ml-1" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif" }}>ランダム</span>
+                                            </div>
+                                        </button>
+                                        
+                                        <button
+                                            onClick={nextWord}
+                                            className="px-4 py-3 bg-gradient-to-r from-pink-500 to-red-500 text-white rounded-xl shadow-md"
+                                        >
+                                            <div className="flex items-center">
+                                                <span className="font-bold text-sm" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif" }}>次へ</span>
+                                                <span className="text-xl ml-1">➡️</span>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Progress indicator - simplified */}
+                            <div className="bg-white rounded-xl shadow-md p-4 mb-4">
+                                <div className="flex justify-between mb-1 text-xs">
+                                    <span>習得: {wordsMastered.size}/{vocabulary.length}</span>
+                                    <span>正解率: {sessionScore}%</span>
+                                </div>
+                                <div className="h-2 bg-pink-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-gradient-to-r from-pink-400 to-red-500 transition-all rounded-full" 
+                                         style={{ width: `${mastery}%` }}></div>
+                                </div>
+                            </div>
+
+                            {/* Collapsible settings */}
+                            {showSettings && (
+                                <div className="mb-4">
+                                    <div className="grid grid-cols-1 gap-3">
+                                        <div className="bg-white rounded-xl shadow-md p-4">
+                                            <h3 className="text-lg font-bold mb-2" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif", color: '#DC143C' }}>
+                                                設定
+                                            </h3>
+                                            
+                                            <div className="space-y-2">
+                                                <button
+                                                    onClick={() => setAutoProgress(!autoProgress)}
+                                                    className={`w-full p-3 rounded-lg flex items-center justify-between ${
+                                                        autoProgress ? 'bg-green-100 text-green-700' : 'bg-gray-50 text-gray-700'
+                                                    }`}
+                                                >
+                                                    <span>⏭️ 自動進行</span>
+                                                    <span>{autoProgress ? '✅' : '⭕'}</span>
+                                                </button>
+                                                
+                                                <button
+                                                    onClick={() => setPracticeUnmastered(!practiceUnmastered)}
+                                                    className={`w-full p-3 rounded-lg flex items-center justify-between ${
+                                                        practiceUnmastered ? 'bg-blue-100 text-blue-700' : 'bg-gray-50 text-gray-700'
+                                                    }`}
+                                                >
+                                                    <span>🎯 未習得のみ</span>
+                                                    <span>{practiceUnmastered ? '✅' : '⭕'}</span>
+                                                </button>
+                                                
+                                                <button
+                                                    onClick={updateAnswerMode}
+                                                    className="w-full p-3 rounded-lg bg-gray-50 text-gray-700 flex items-center justify-between"
+                                                >
+                                                    <span>🔄 翻訳モード</span>
+                                                    <span>
+                                                        {answerMode === 'JapaneseToEnglish' ? '日→英' : 
+                                                         answerMode === 'EnglishToJapanese' ? '英→日' :
+                                                         answerMode === 'JapaneseToThai' ? '日→泰' : 
+                                                         '泰→日'}
+                                                    </span>
+                                                </button>
+                                                
+                                                <button
+                                                    onClick={changeTargetLanguage}
+                                                    className="w-full p-3 rounded-lg bg-gray-50 text-gray-700 flex items-center justify-between"
+                                                >
+                                                    <span>🌐 言語</span>
+                                                    <span>{targetLanguage === 'English' ? '🇬🇧' : '🇹🇭'}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white rounded-xl shadow-md p-4">
+                                            <div className="space-y-2">
+                                                <div>
+                                                    <label className="block text-sm mb-1">CSVアップロード</label>
+                                                    <input
+                                                        type="file"
+                                                        accept=".csv"
+                                                        onChange={handleFileUpload}
+                                                        className="w-full p-2 border border-gray-200 rounded-lg text-sm"
+                                                    />
+                                                </div>
+                                                
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <button
+                                                        onClick={downloadSampleCSV}
+                                                        className="p-3 bg-green-500 text-white rounded-lg text-sm font-bold"
+                                                    >
+                                                        サンプルCSV
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={resetProgress}
+                                                        className="p-3 text-red-600 border border-red-300 rounded-lg text-sm font-bold"
+                                                    >
+                                                        リセット
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
+            // Desktop version
+            return (
+                <div className="min-h-screen relative overflow-hidden" style={{ fontFamily: "'Inter', 'Noto Sans', sans-serif", backgroundColor: '#FFF5F5' }}>
+                    {/* Sakura petals animation */}
+                    {showSakura && (
+                        <div className="fixed inset-0 pointer-events-none">
+                            {[...Array(15)].map((_, i) => (
+                                <div
+                                    key={i}
+                                    className="absolute animate-bounce-custom"
+                                    style={{
+                                        left: `${Math.random() * 100}%`,
+                                        top: `-20px`,
+                                        animationDelay: `${Math.random() * 10}s`,
+                                        animationDuration: `${10 + Math.random() * 10}s`,
+                                    }}
+                                >
+                                    <div className="text-pink-300 opacity-40 text-2xl">🌸</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Traditional Japanese wave pattern background */}
+                    <div className="fixed inset-0 opacity-5">
+                        <div className="absolute inset-0" style={{
+                            backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0,50 Q25,0 50,50 T100,50' stroke='%23DC143C' fill='none' stroke-width='1'/%3E%3Cpath d='M0,60 Q25,10 50,60 T100,60' stroke='%23DC143C' fill='none' stroke-width='1'/%3E%3Cpath d='M0,70 Q25,20 50,70 T100,70' stroke='%23DC143C' fill='none' stroke-width='1'/%3E%3C/svg%3E")`,
+                            backgroundSize: '100px 100px'
+                        }}></div>
+                    </div>
+                    
+                    <div className="relative max-w-7xl mx-auto p-4">
+                        {/* Header with traditional Japanese styling */}
+                        <div className="text-center mb-8">
+                            <div className="inline-block">
+                                <h1 className="text-5xl font-bold mb-2 bg-gradient-to-r from-red-600 to-pink-600 bg-clip-text text-transparent" 
+                                    style={{ fontFamily: "'M PLUS Rounded 1c', 'Noto Sans JP', sans-serif" }}>
+                                    日本語学習
+                                </h1>
+                                <div className="bg-red-600 h-1 w-20 mx-auto mb-3 rounded-full"></div>
+                                <p className="text-gray-600 text-sm">にほんごがくしゅう</p>
+                            </div>
+                            
+                            {/* Cute mascot */}
+                            <div className="mt-4">
+                                <div className="inline-block p-3 bg-white rounded-full shadow-lg">
+                                    <span className="text-4xl">🎌</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Main content area with traditional frame */}
+                        <div className="max-w-5xl mx-auto">
+                            <div className="bg-white rounded-3xl shadow-xl overflow-hidden border-4 border-red-100">
+                                {/* Top controls */}
+                                <div className="p-6 border-b-2 border-red-100 bg-gradient-to-r from-pink-50 to-red-50">
+                                    <div className="flex flex-wrap justify-center gap-3">
+                                        <button
+                                            onClick={() => setShowFurigana(!showFurigana)}
+                                            className={`px-6 py-3 rounded-full font-medium transition-all transform hover:scale-105 ${
+                                                showFurigana 
+                                                    ? 'bg-gradient-to-r from-red-500 to-pink-500 text-white shadow-lg' 
+                                                    : 'bg-white text-red-600 border-2 border-red-300'
+                                            }`}
+                                            style={{ fontFamily: "'M PLUS Rounded 1c', 'Noto Sans JP', sans-serif" }}
+                                        >
+                                            <span className="mr-2">仮</span>ふりがな
+                                        </button>
+                                        
+                                        <button
+                                            onClick={() => setShowRomaji(!showRomaji)}
+                                            className={`px-6 py-3 rounded-full font-medium transition-all transform hover:scale-105 ${
+                                                showRomaji 
+                                                    ? 'bg-gradient-to-r from-red-500 to-pink-500 text-white shadow-lg' 
+                                                    : 'bg-white text-red-600 border-2 border-red-300'
+                                            }`}
+                                        >
+                                            <span className="mr-2">🅰</span>Romaji
+                                        </button>
+                                        
+                                        <button
+                                            onClick={() => setAutoProgress(!autoProgress)}
+                                            className={`px-6 py-3 rounded-full font-medium transition-all transform hover:scale-105 ${
+                                                autoProgress 
+                                                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg' 
+                                                    : 'bg-white text-green-600 border-2 border-green-300'
+                                            }`}
+                                            style={{ fontFamily: "'M PLUS Rounded 1c', 'Noto Sans JP', sans-serif" }}
+                                        >
+                                            <span className="mr-2">⏭️</span>自動進行
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Main vocabulary display */}
+                                <div className="p-8 bg-gradient-to-b from-white to-pink-50">
+                                    <div className="text-center mb-8">
+                                        {!currentWord ? (
+                                            <div className="text-3xl text-gray-500 animate-pulse">読み込み中...</div>
+                                        ) : answerMode === 'JapaneseToEnglish' || answerMode === 'JapaneseToThai' ? (
+                                            <>
+                                                <div className="text-7xl font-bold mb-4 transform hover:scale-105 transition-transform" 
+                                                     style={{ fontFamily: "'M PLUS Rounded 1c', 'Noto Sans JP', sans-serif", color: '#DC143C' }}>
+                                                    {renderJapaneseWithFurigana()}
+                                                </div>
+                                                {showRomaji && (
+                                                    <div className="text-2xl text-gray-600 italic" style={{ fontFamily: "'Inter', sans-serif" }}>
+                                                        {currentWord.romaji}
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : answerMode === 'EnglishToJapanese' ? (
+                                            <div className="text-6xl font-bold" style={{ color: '#DC143C' }}>
+                                                {currentWord.english}
+                                            </div>
+                                        ) : (
+                                            <div className="text-6xl font-bold" style={{ fontFamily: "'Noto Sans Thai', sans-serif", color: '#DC143C' }}>
+                                                {currentWord.thai}
+                                            </div>
+                                        )}
+                                        
+                                        {/* Decorative elements */}
+                                        <div className="mt-4">
+                                            <span className="inline-block w-16 h-1 bg-red-400 rounded-full mx-1"></span>
+                                            <span className="inline-block w-16 h-1 bg-pink-400 rounded-full mx-1"></span>
+                                            <span className="inline-block w-16 h-1 bg-red-400 rounded-full mx-1"></span>
+                                        </div>
+                                    </div>
+
+                                    {/* Answer options with cute styling */}
+                                    <div className="grid grid-cols-2 gap-4 max-w-2xl mx-auto">
+                                        {getOptions().map((option, index) => (
+                                            <button
+                                                key={index}
+                                                onClick={() => handleAnswerSelect(option)}
+                                                className={`p-6 rounded-2xl text-lg font-medium transition-all transform hover:scale-105 shadow-md ${
+                                                    showResult && option === getCorrectAnswer()
+                                                        ? 'bg-gradient-to-r from-green-400 to-green-500 text-white border-3 border-green-600'
+                                                        : showResult && option === selectedAnswer && selectedAnswer !== getCorrectAnswer()
+                                                        ? 'bg-gradient-to-r from-red-400 to-red-500 text-white border-3 border-red-600'
+                                                        : 'bg-white hover:bg-pink-50 border-3 border-pink-200'
+                                                }`}
+                                                disabled={showResult}
+                                                style={{ 
+                                                    fontFamily: option && option.match(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/) 
+                                                        ? "'M PLUS Rounded 1c', 'Noto Sans JP', sans-serif" 
+                                                        : option && option.match(/[\u0E00-\u0E7F]/)
+                                                        ? "'Noto Sans Thai', sans-serif"
+                                                        : "'Inter', sans-serif"
+                                                }}
+                                            >
+                                                {option}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Navigation with kawaii buttons */}
+                                <div className="p-6 bg-gradient-to-r from-pink-100 to-red-100">
+                                    <div className="flex justify-center space-x-4">
+                                        <button
+                                            onClick={previousWord}
+                                            className="px-8 py-4 bg-white rounded-2xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all"
+                                        >
+                                            <div className="flex flex-col items-center">
+                                                <span className="text-3xl mb-1">⬅️</span>
+                                                <span className="font-bold text-red-600" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif" }}>前へ</span>
+                                            </div>
+                                        </button>
+                                        
+                                        <button
+                                            onClick={goToRandomWord}
+                                            className="px-8 py-4 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-2xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all"
+                                        >
+                                            <div className="flex flex-col items-center">
+                                                <span className="text-3xl mb-1">🎲</span>
+                                                <span className="font-bold" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif" }}>ランダム</span>
+                                            </div>
+                                        </button>
+                                        
+                                        <button
+                                            onClick={nextWord}
+                                            className="px-8 py-4 bg-gradient-to-r from-pink-500 to-red-500 text-white rounded-2xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all"
+                                        >
+                                            <div className="flex flex-col items-center">
+                                                <span className="text-3xl mb-1">➡️</span>
+                                                <span className="font-bold" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif" }}>次へ</span>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Stats and options in Japanese style */}
+                            <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                {/* Progress card */}
+                                <div className="bg-white rounded-2xl shadow-lg p-6 border-3 border-pink-200">
+                                    <h3 className="text-xl font-bold mb-4 text-red-600" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif" }}>
+                                        📊 学習進度
+                                    </h3>
+                                    
+                                    <div className="space-y-4">
+                                        <div>
+                                            <div className="flex justify-between mb-2">
+                                                <span className="text-sm text-gray-600">進行状況</span>
+                                                <span className="text-sm font-bold text-red-600">{progress}%</span>
+                                            </div>
+                                            <div className="h-3 bg-pink-100 rounded-full overflow-hidden">
+                                                <div className="h-full bg-gradient-to-r from-pink-400 to-red-500 transition-all rounded-full" 
+                                                     style={{ width: `${progress}%` }}></div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div>
+                                            <div className="flex justify-between mb-2">
+                                                <span className="text-sm text-gray-600">習得度</span>
+                                                <span className="text-sm font-bold text-green-600">{mastery}%</span>
+                                            </div>
+                                            <div className="h-3 bg-green-100 rounded-full overflow-hidden">
+                                                <div className="h-full bg-gradient-to-r from-green-400 to-green-600 transition-all rounded-full" 
+                                                     style={{ width: `${mastery}%` }}></div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="pt-4 border-t-2 border-pink-100">
+                                            <div className="flex justify-between mb-2">
+                                                <span className="text-sm text-gray-600">正答率</span>
+                                                <span className="text-sm font-bold text-blue-600">{sessionScore}%</span>
+                                            </div>
+                                            <p className="text-xs text-gray-500">{correct} / {attempted} 問正解</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Options card */}
+                                <div className="bg-white rounded-2xl shadow-lg p-6 border-3 border-blue-200">
+                                    <h3 className="text-xl font-bold mb-4 text-blue-600" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif" }}>
+                                        ⚙️ 設定
+                                    </h3>
+                                    
+                                    <div className="space-y-3">
+                                        <button
+                                            onClick={() => setPracticeUnmastered(!practiceUnmastered)}
+                                            className={`w-full p-4 rounded-xl font-medium transition-all ${
+                                                practiceUnmastered ? 'bg-blue-100 text-blue-700' : 'bg-gray-50 text-gray-700'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span>🎯 未習得の練習</span>
+                                                <span className="text-2xl">{practiceUnmastered ? '✅' : '⭕'}</span>
+                                            </div>
+                                        </button>
+                                        
+                                        <button
+                                            onClick={updateAnswerMode}
+                                            className="w-full p-4 rounded-xl bg-gray-50 hover:bg-gray-100 font-medium transition-all"
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span>🔄 翻訳モード</span>
+                                                <span className="text-sm">
+                                                    {answerMode === 'JapaneseToEnglish' ? '日→英' : 
+                                                     answerMode === 'EnglishToJapanese' ? '英→日' :
+                                                     answerMode === 'JapaneseToThai' ? '日→泰' : 
+                                                     '泰→日'}
+                                                </span>
+                                            </div>
+                                        </button>
+                                        
+                                        <button
+                                            onClick={changeTargetLanguage}
+                                            className="w-full p-4 rounded-xl bg-gray-50 hover:bg-gray-100 font-medium transition-all"
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span>🌐 言語切替</span>
+                                                <span>{targetLanguage === 'English' ? '🇬🇧' : '🇹🇭'}</span>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* File management card */}
+                                <div className="bg-white rounded-2xl shadow-lg p-6 border-3 border-green-200">
+                                    <h3 className="text-xl font-bold mb-4 text-green-600" style={{ fontFamily: "'M PLUS Rounded 1c', sans-serif" }}>
+                                        📁 データ管理
+                                    </h3>
+                                    
+                                    <div className="space-y-3">
+                                        <div>
+                                            <label className="block text-sm font-medium mb-2">CSVアップロード</label>
+                                            <input
+                                                type="file"
+                                                accept=".csv"
+                                                onChange={handleFileUpload}
+                                                className="w-full p-3 border-2 border-gray-200 rounded-lg hover:border-green-300 transition-all"
+                                            />
+                                        </div>
+                                        
+                                        <button
+                                            onClick={downloadSampleCSV}
+                                            className="w-full p-4 bg-green-500 text-white rounded-xl hover:bg-green-600 font-bold transition-all"
+                                        >
+                                            📥 サンプルCSV
+                                        </button>
+                                        
+                                        <button
+                                            onClick={resetProgress}
+                                            className="w-full p-4 text-red-600 border-2 border-red-300 rounded-xl hover:bg-red-50 font-bold transition-all"
+                                        >
+                                            🔄 リセット
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Footer with Japanese style */}
+                        <div className="text-center mt-8 pb-8">
+                            <p className="text-gray-600 text-sm">頑張って！ 🌸 がんばって！</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Render the app
+        ReactDOM.render(<JapaneseLearningApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
